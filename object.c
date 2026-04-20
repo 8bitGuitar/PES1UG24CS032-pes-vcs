@@ -123,8 +123,34 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         return 0;
     }
 
-    // TODO: Write object to disk (shard dir, temp file, atomic rename)
+    // Step 5: Create shard directory (.pes/objects/XX/)
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(id_out, hex);
+
+    char shard_dir[512];
+    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+    mkdir(shard_dir, 0755);
+
+    // Step 6: Write to a temporary file in the shard directory
+    char tmp_path[512];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/tmp_XXXXXX", shard_dir);
+    int fd = mkstemp(tmp_path);
+    if (fd < 0) {
+        free(full_object);
+        return -1;
+    }
+
+    ssize_t written = write(fd, full_object, full_len);
     free(full_object);
+    if (written < 0 || (size_t)written != full_len) {
+        close(fd);
+        unlink(tmp_path);
+        return -1;
+    }
+
+    // TODO: fsync and atomic rename to final path
+    close(fd);
+    unlink(tmp_path);
     return -1;
 }
 
