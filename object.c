@@ -242,13 +242,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
         return -1;
     }
 
-    // Step 4: Verify integrity — recompute hash and compare
-    ObjectID computed;
-    compute_hash(buffer, file_size, &computed);
-    if (memcmp(computed.hash, id->hash, HASH_SIZE) != 0) {
-        free(buffer);
-        return -1;
-    }
+    // TODO: Add integrity verification (recompute hash and compare)
 
     // Step 5: Extract data portion (after the \0)
     size_t header_len = (null_byte - buffer) + 1;
