@@ -208,7 +208,12 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
         commit.has_parent = 0;
     }
 
-    // TODO: Fill metadata, serialize, write, update HEAD
-    (void)message; (void)commit_id_out;
+    // Step 3: Fill commit metadata
+    snprintf(commit.author, sizeof(commit.author), "%s", pes_author());
+    commit.timestamp = (uint64_t)time(NULL);
+    snprintf(commit.message, sizeof(commit.message), "%s", message);
+
+    // TODO: Serialize, write to object store, update HEAD
+    (void)commit_id_out;
     return -1;
 }
