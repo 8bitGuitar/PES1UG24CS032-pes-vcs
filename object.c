@@ -94,8 +94,37 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    // TODO: Implement
-    (void)type; (void)data; (void)len; (void)id_out;
+    // Step 1: Build the header string "<type> <size>\0"
+    const char *type_str;
+    switch (type) {
+        case OBJ_BLOB:   type_str = "blob";   break;
+        case OBJ_TREE:   type_str = "tree";   break;
+        case OBJ_COMMIT: type_str = "commit"; break;
+        default: return -1;
+    }
+
+    char header[64];
+    int header_len = sprintf(header, "%s %zu", type_str, len);
+    header_len++; // include the null terminator as part of the object
+
+    // Step 2: Build full object = header + data
+    size_t full_len = header_len + len;
+    uint8_t *full_object = malloc(full_len);
+    if (!full_object) return -1;
+    memcpy(full_object, header, header_len);
+    memcpy(full_object + header_len, data, len);
+
+    // Step 3: Compute SHA-256 hash of full object
+    compute_hash(full_object, full_len, id_out);
+
+    // Step 4: Check if object already exists (deduplication)
+    if (object_exists(id_out)) {
+        free(full_object);
+        return 0;
+    }
+
+    // TODO: Write object to disk (shard dir, temp file, atomic rename)
+    free(full_object);
     return -1;
 }
 
@@ -122,7 +151,78 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
 // The caller is responsible for calling free(*data_out).
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
-    // TODO: Implement
-    (void)id; (void)type_out; (void)data_out; (void)len_out;
-    return -1;
+    // Step 1: Build file path from hash
+    char path[512];
+    object_path(id, path, sizeof(path));
+
+    // Step 2: Open and read the entire file
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (file_size <= 0) {
+        fclose(f);
+        return -1;
+    }
+
+    uint8_t *buffer = malloc(file_size);
+    if (!buffer) {
+        fclose(f);
+        return -1;
+    }
+
+    size_t bytes_read = fread(buffer, 1, file_size, f);
+    fclose(f);
+    if (bytes_read != (size_t)file_size) {
+        free(buffer);
+        return -1;
+    }
+
+    // Step 3: Parse header — find the null byte separating header from data
+    uint8_t *null_byte = memchr(buffer, '\0', file_size);
+    if (!null_byte) {
+        free(buffer);
+        return -1;
+    }
+
+    // Parse type string from header
+    if (strncmp((char *)buffer, "blob ", 5) == 0) {
+        *type_out = OBJ_BLOB;
+    } else if (strncmp((char *)buffer, "tree ", 5) == 0) {
+        *type_out = OBJ_TREE;
+    } else if (strncmp((char *)buffer, "commit ", 7) == 0) {
+        *type_out = OBJ_COMMIT;
+    } else {
+        free(buffer);
+        return -1;
+    }
+
+    // Step 4: Verify integrity — recompute hash and compare
+    ObjectID computed;
+    compute_hash(buffer, file_size, &computed);
+    if (memcmp(computed.hash, id->hash, HASH_SIZE) != 0) {
+        free(buffer);
+        return -1;
+    }
+
+    // Step 5: Extract data portion (after the \0)
+    size_t header_len = (null_byte - buffer) + 1;
+    size_t data_len = file_size - header_len;
+
+    uint8_t *data = malloc(data_len + 1);
+    if (!data) {
+        free(buffer);
+        return -1;
+    }
+    memcpy(data, buffer + header_len, data_len);
+    data[data_len] = '\0'; // null-terminate for convenience
+
+    *data_out = data;
+    *len_out = data_len;
+
+    free(buffer);
+    return 0;
 }
