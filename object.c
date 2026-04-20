@@ -148,10 +148,26 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         return -1;
     }
 
-    // TODO: fsync and atomic rename to final path
+    // Step 7: fsync the file to ensure data reaches disk
+    fsync(fd);
     close(fd);
-    unlink(tmp_path);
-    return -1;
+
+    // Step 8: Rename temp file to final path (atomic)
+    char final_path[512];
+    object_path(id_out, final_path, sizeof(final_path));
+    if (rename(tmp_path, final_path) != 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+
+    // Step 9: fsync the shard directory to persist the rename
+    int dir_fd = open(shard_dir, O_RDONLY);
+    if (dir_fd >= 0) {
+        fsync(dir_fd);
+        close(dir_fd);
+    }
+
+    return 0;
 }
 
 // Read an object from the store.
