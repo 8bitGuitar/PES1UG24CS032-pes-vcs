@@ -209,9 +209,36 @@ int index_save(const Index *index) {
 //   - index_find                       : checking if the file is already staged
 //
 // Returns 0 on success, -1 on error.
+// Forward declaration (implemented in object.c)
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
+    // Read the file contents
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        fprintf(stderr, "error: '%s' not found\n", path);
+        return -1;
+    }
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    size_t file_size = (size_t)st.st_size;
+    void *contents = malloc(file_size);
+    if (!contents) { fclose(f); return -1; }
+
+    fread(contents, 1, file_size, f);
+    fclose(f);
+
+    // Write blob to object store
+    ObjectID blob_id;
+    if (object_write(OBJ_BLOB, contents, file_size, &blob_id) != 0) {
+        free(contents);
+        return -1;
+    }
+    free(contents);
+
+    // TODO: Update index entry and save
+    (void)index;
     return -1;
 }
