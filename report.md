@@ -70,3 +70,31 @@ In detached HEAD state, `.pes/HEAD` contains a raw commit hash (e.g., `a1b2c3d4.
 - **Commits visited:** Each branch walks its history, but commits shared between branches are visited only once (the hash set deduplicates). In the worst case (completely disjoint histories), this is 100,000 commit objects. In practice with shared ancestry, it is fewer.
 - **Trees and blobs:** Each commit points to one root tree. If each tree has ~50 entries on average, and there are ~100,000 unique trees, that is ~5,000,000 tree entry lookups. With deduplication (shared blobs across commits), the unique reachable objects are likely in the range of **200,000–500,000** total objects to visit.
 - The hash set keeps memory usage proportional to the number of unique reachable objects (each entry is 32 bytes for SHA-256), so roughly 6–16 MB for this scale.
+
+### Q6.2: Race Condition Between GC and Concurrent Commit
+
+**Why concurrent GC and commit is dangerous:**
+
+Consider this timeline with two concurrent processes:
+
+| Time | Commit process | GC process |
+|------|---------------|------------|
+| T1 | Writes blob `B1` to object store | |
+| T2 | Writes tree `T1` referencing `B1` | |
+| T3 | | Starts mark phase — walks all reachable refs |
+| T4 | | Mark phase completes. `B1` and `T1` are **not** reachable yet (commit object hasn't been written, branch ref hasn't been updated) |
+| T5 | Writes commit `C1` referencing `T1` | |
+| T6 | | Sweep phase: deletes `B1` and `T1` as unreachable |
+| T7 | Updates `refs/heads/main` → `C1` | |
+
+Now `C1` is the HEAD commit, but its tree `T1` and blob `B1` have been deleted. The repository is **corrupted** — `pes log`, `pes checkout`, and any operation that reads this commit will fail with missing object errors.
+
+**How Git's real GC avoids this:**
+
+1. **Grace period:** `git gc` only deletes unreachable objects that are older than a configurable threshold (default: 2 weeks, controlled by `gc.pruneExpire`). Newly created objects during a concurrent commit will be recent and therefore survive the sweep even if momentarily unreachable.
+
+2. **Lock files:** Git uses `.git/gc.pid` lock files to prevent multiple GC processes from running simultaneously.
+
+3. **Reachability from all refs + reflogs:** Git's mark phase also traverses the reflog, which records recent HEAD changes. This means even recently dereferenced commits (and their trees/blobs) remain reachable during GC.
+
+4. **Two-phase approach:** In practice, `git gc` first repacks objects into packfiles and only then prunes loose objects, reducing the window for races.
