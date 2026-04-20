@@ -192,9 +192,18 @@ static int write_tree_level(IndexEntry *entries, int count, const char *prefix, 
 //   - object_write    : save that binary buffer to the store as OBJ_TREE
 //
 // Returns 0 on success, -1 on error.
+// Helper: compare index entries by path for sorting
+static int compare_index_by_path(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path, ((const IndexEntry *)b)->path);
+}
+
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Index index;
+    if (index_load(&index) != 0) return -1;
+    if (index.count == 0) return -1;
+
+    // Sort entries by path to ensure directory grouping works correctly
+    qsort(index.entries, index.count, sizeof(IndexEntry), compare_index_by_path);
+
+    return write_tree_level(index.entries, index.count, "", id_out);
 }
