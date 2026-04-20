@@ -140,8 +140,33 @@ static int write_tree_level(IndexEntry *entries, int count, const char *prefix, 
             snprintf(te->name, sizeof(te->name), "%s", rel);
             i++;
         } else {
-            // TODO: Handle subdirectory grouping and recursive subtree building
-            i++;
+            // Directory — extract dir name and group all entries under it
+            char dir_name[256];
+            size_t dir_len = slash - rel;
+            memcpy(dir_name, rel, dir_len);
+            dir_name[dir_len] = '\0';
+
+            // Build new prefix for the subdirectory
+            char new_prefix[512];
+            snprintf(new_prefix, sizeof(new_prefix), "%s%s/", prefix, dir_name);
+            size_t new_prefix_len = strlen(new_prefix);
+
+            // Collect all entries belonging to this subdirectory
+            int sub_start = i;
+            while (i < count && strncmp(entries[i].path, new_prefix, new_prefix_len) == 0) {
+                i++;
+            }
+
+            // Recursively build subtree
+            ObjectID subtree_id;
+            if (write_tree_level(entries + sub_start, i - sub_start, new_prefix, &subtree_id) != 0) {
+                return -1;
+            }
+
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = MODE_DIR;
+            te->hash = subtree_id;
+            snprintf(te->name, sizeof(te->name), "%s", dir_name);
         }
     }
 
