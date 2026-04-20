@@ -20,3 +20,15 @@ To implement `pes checkout <branch>`, the following changes are needed:
 - Files present in the target branch but absent in the current branch must be created.
 - If the user has uncommitted modifications to tracked files that also differ between branches, checkout must abort to avoid data loss. Detecting this requires comparing the working directory state against both the current index and the target tree.
 - Directory creation and removal adds further edge cases (e.g., removing the last file in a directory should remove the directory).
+
+### Q5.2: Detecting Dirty Working Directory Conflicts
+
+To detect whether checkout is safe, compare three versions of each tracked file using only the index and object store:
+
+1. **Index vs. HEAD tree:** For each file in the index, compare its stored blob hash against the blob hash in the current HEAD commit's tree. If they differ, the file has staged changes that would be lost.
+
+2. **Working directory vs. Index:** For each file in the index, `stat()` the working file and compare `mtime` and `size` against the index entry. If they differ, the file has unstaged modifications. To be certain, re-read and re-hash the file contents and compare against the index blob hash.
+
+3. **Target tree vs. HEAD tree:** For each file that differs between the current HEAD tree and the target branch's tree, check if that file is dirty (from steps 1 or 2). If a file is both dirty and differs between branches, checkout must refuse — otherwise the user's modifications would be silently overwritten.
+
+Files that are identical between both branches can be safely ignored even if dirty, since checkout would not change them. Files that are untracked (not in the index) are also safe unless the target tree introduces a file with the same name, which would cause a conflict.
