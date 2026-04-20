@@ -32,3 +32,19 @@ To detect whether checkout is safe, compare three versions of each tracked file 
 3. **Target tree vs. HEAD tree:** For each file that differs between the current HEAD tree and the target branch's tree, check if that file is dirty (from steps 1 or 2). If a file is both dirty and differs between branches, checkout must refuse — otherwise the user's modifications would be silently overwritten.
 
 Files that are identical between both branches can be safely ignored even if dirty, since checkout would not change them. Files that are untracked (not in the index) are also safe unless the target tree introduces a file with the same name, which would cause a conflict.
+
+### Q5.3: Detached HEAD and Recovering Commits
+
+In detached HEAD state, `.pes/HEAD` contains a raw commit hash (e.g., `a1b2c3d4...`) instead of a symbolic reference (e.g., `ref: refs/heads/main`).
+
+**What happens when you commit in this state:**
+- New commits are created normally. Each new commit's parent points to the previous commit.
+- However, `head_update` writes the new commit hash directly into `.pes/HEAD` (since there is no branch ref to update).
+- No branch file in `.pes/refs/heads/` is updated, so no branch tracks these commits.
+
+**The danger:**
+- If the user checks out a branch (e.g., `pes checkout main`), HEAD is overwritten to point to that branch. The commits made in detached HEAD state are now **orphaned** — no reference points to them. They still exist in the object store but are unreachable by walking any branch.
+
+**Recovery:**
+- If the user remembers (or recorded) the commit hash, they can directly check it out or create a branch pointing to it: `git branch recovery-branch <hash>`.
+- Git provides `git reflog`, which logs every change to HEAD, allowing users to find the orphaned commit hash. PES-VCS does not have a reflog, so without the hash these commits would eventually be lost to garbage collection.
