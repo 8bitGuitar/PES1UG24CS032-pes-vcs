@@ -238,7 +238,23 @@ int index_add(Index *index, const char *path) {
     }
     free(contents);
 
-    // TODO: Update index entry and save
-    (void)index;
+    // Determine file mode
+    uint32_t mode = (st.st_mode & S_IXUSR) ? 0100755 : 0100644;
+
+    // Find existing entry or create a new one
+    IndexEntry *entry = index_find(index, path);
+    if (!entry) {
+        if (index->count >= MAX_INDEX_ENTRIES) return -1;
+        entry = &index->entries[index->count++];
+    }
+
+    // Fill entry with metadata
+    entry->mode = mode;
+    entry->hash = blob_id;
+    entry->mtime_sec = (uint64_t)st.st_mtime;
+    entry->size = (uint32_t)st.st_size;
+    snprintf(entry->path, sizeof(entry->path), "%s", path);
+
+    // TODO: Save index to disk
     return -1;
 }
