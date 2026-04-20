@@ -172,25 +172,28 @@ static int compare_entries_by_path(const void *a, const void *b) {
 }
 
 int index_save(const Index *index) {
-    // Sort a mutable copy by path
-    Index sorted = *index;
-    qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_entries_by_path);
+    // Sort a mutable copy by path (heap-allocated to avoid stack overflow)
+    Index *sorted = malloc(sizeof(Index));
+    if (!sorted) return -1;
+    memcpy(sorted, index, sizeof(Index));
+    qsort(sorted->entries, sorted->count, sizeof(IndexEntry), compare_entries_by_path);
 
     // Write to temp file
     char tmp_path[] = INDEX_FILE ".tmp";
     FILE *f = fopen(tmp_path, "w");
-    if (!f) return -1;
+    if (!f) { free(sorted); return -1; }
 
-    for (int i = 0; i < sorted.count; i++) {
+    for (int i = 0; i < sorted->count; i++) {
         char hex[HASH_HEX_SIZE + 1];
-        hash_to_hex(&sorted.entries[i].hash, hex);
+        hash_to_hex(&sorted->entries[i].hash, hex);
         fprintf(f, "%o %s %lu %u %s\n",
-                sorted.entries[i].mode,
+                sorted->entries[i].mode,
                 hex,
-                (unsigned long)sorted.entries[i].mtime_sec,
-                sorted.entries[i].size,
-                sorted.entries[i].path);
+                (unsigned long)sorted->entries[i].mtime_sec,
+                sorted->entries[i].size,
+                sorted->entries[i].path);
     }
+    free(sorted);
 
     // Flush and sync to disk, then atomic rename
     fflush(f);
@@ -255,6 +258,5 @@ int index_add(Index *index, const char *path) {
     entry->size = (uint32_t)st.st_size;
     snprintf(entry->path, sizeof(entry->path), "%s", path);
 
-    // TODO: Save index to disk
-    return -1;
+    return index_save(index);
 }
