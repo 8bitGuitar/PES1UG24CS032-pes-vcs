@@ -120,6 +120,36 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 
 // ─── TODO: Implement these ──────────────────────────────────────────────────
 
+// Recursive helper: build a tree from sorted index entries at a given prefix level.
+// prefix is "" for root, "src/" for the src directory, etc.
+static int write_tree_level(IndexEntry *entries, int count, const char *prefix, ObjectID *id_out) {
+    Tree tree;
+    tree.count = 0;
+    size_t prefix_len = strlen(prefix);
+
+    int i = 0;
+    while (i < count) {
+        const char *rel = entries[i].path + prefix_len;
+        const char *slash = strchr(rel, '/');
+
+        if (!slash) {
+            // File at this level — add directly as a blob entry
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = entries[i].mode;
+            te->hash = entries[i].hash;
+            snprintf(te->name, sizeof(te->name), "%s", rel);
+            i++;
+        } else {
+            // TODO: Handle subdirectory grouping and recursive subtree building
+            i++;
+        }
+    }
+
+    // TODO: Serialize tree and write to object store
+    (void)id_out;
+    return -1;
+}
+
 // Build a tree hierarchy from the current index and write all tree
 // objects to the object store.
 //
